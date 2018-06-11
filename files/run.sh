@@ -1,15 +1,15 @@
 #!/bin/sh
 
 CERTS="/opt/monroe/rootCACert.pem"
-COLLECT="16"
+COLLECT="256"
 IFACE=$1
 LOGFILE=""
 ODIR="/var/monroe/tmp"
 URLS=$2
 RUNS="4"
 RESULTDIR="/monroe/results"
-WAITTO=100
-WAITFROM=10
+WAITTO=1000
+WAITFROM=2000
 
 mkdir -p $ODIR
 
