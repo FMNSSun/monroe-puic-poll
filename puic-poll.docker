@@ -1,0 +1,8 @@
+FROM monroe/base
+
+MAINTAINER munt@zhaw.ch
+
+COPY files/* /opt/monroe/
+
+ENTRYPOINT ["dumb-init", "--", "/opt/monroe/run.sh"]
+# ENTRYPOINT ["/bin/sh"]
