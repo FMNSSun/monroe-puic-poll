@@ -13,11 +13,12 @@ import (
 	"strings"
 	"math/rand"
 	"encoding/json"
-	"path"
 	"net"
 	"crypto/x509"
+	"path/filepath"
 
 	"github.com/lucas-clemente/quic-go/h2quic"
+	"github.com/lucas-clemente/quic-go"
 )
 
 // opens a file in append,wronly,create,0600 mode
@@ -55,14 +56,14 @@ type Stats struct {
 	Message string
 }
 
-// Create a HTTP Client using an H2Quic QuicRoundTripper that determines
+// Create a HTTP Client using an H2Quic RoundTripper that determines
 // the LocalAddr to listen on based on the iface name provided. 
 // (it'll pick the first address of that interface). If the interface name
 // provided is an empty string it'll listen on the zero address. 
 func createHttpClient(ifaceName string, log io.Writer) (*http.Client, error) {
 	if ifaceName == "" {
 		hclient := &http.Client{
-			Transport: &h2quic.QuicRoundTripper{
+			Transport: &h2quic.RoundTripper{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
 		}
@@ -94,9 +95,11 @@ func createHttpClient(ifaceName string, log io.Writer) (*http.Client, error) {
 	writeOrDie(log, "Using %q", udpAddr.String())
 
 	hclient := &http.Client{
-		Transport: &h2quic.QuicRoundTripper{
+		Transport: &h2quic.RoundTripper{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			LocalAddr : udpAddr,
+			QuicConfig : &quic.Config { 
+				ClientLocalAddr: udpAddr,
+			},
 		},
 		Timeout : time.Second * 30, // maximum time a request may last is 30s
 	}
@@ -117,13 +120,13 @@ func openLogfile(logfilePath string) *os.File {
 }
 
 // Return the name of the next output file name
-func getOFileName() string {
-	return fmt.Sprintf("puic-poll-%d.json", time.Now().UnixNano())
+func getOFileName(nodeId string) string {
+	return fmt.Sprintf("puic-poll-%d-%s.json", time.Now().UnixNano(), nodeId)
 }
 
 // Open the next output file in append,wronly,create,0600 mode.
-func openNextOutputFile(odir string) (*os.File, error) {
-	fpath := path.Join(odir, getOFileName())
+func openNextOutputFile(odir, nodeId string) (*os.File, error) {
+	fpath := filepath.Join(odir, getOFileName(nodeId))
 
 	f, err := os.OpenFile(fpath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 
@@ -143,7 +146,7 @@ func wait(waitFrom int, waitTo int) {
 
 // load CA certs and set InsecureSkipVerify to false. 
 func loadCerts(certs string, hclient *http.Client) error {
-	rt := hclient.Transport.(*h2quic.QuicRoundTripper)
+	rt := hclient.Transport.(*h2quic.RoundTripper)
 	rt.TLSClientConfig.InsecureSkipVerify = false
 
 	// Load CA certs
@@ -161,51 +164,115 @@ func loadCerts(certs string, hclient *http.Client) error {
 	return nil
 }
 
+type monroeConfig struct {
+	URLs string
+	WaitFrom int
+	WaitTo int
+	Collect int
+	IFaceName string
+	Runs int
+	NodeId string `json:nodeid`
+}
+
+
 func main() {
-	var urls = flag.String("urls", "", "URLs to fetch (; delimited).")
-	var logfilePath = flag.String("logfile", "puic-poll.log", "File to write debug information to.")
-	var waitFrom = flag.Int("wait-from", 100, "Minimum time to wait in milliseconds before making the next request.")
-	var waitTo = flag.Int("wait-to", 200, "Maximum time to wait in milliseconds before making the next request.")
-	var collect = flag.Int("collect", 128, "How many statistics items to collect in a single output file.")
-	var odir = flag.String("odir", "./tmp/", "Output directory.")
-	var ifaceName = flag.String("iface", "op0", "Interface to use.")
-	var certs = flag.String("certs", "", "Path to certificates to be trusted as Root CAs.")
-	var runs = flag.Int("runs", 10, "How many runs (one run constists of `collect` requests)")
+	// Default values
+	urls := ""
+	waitFrom := int(1000)
+	waitTo := int(2000)
+	collect := int(256)
+	ifaceName := "op0"
+	runs := int(4)
+
+	var cfgFile = flag.String("config","/monroe/config","Path to config file!")
+	var odirFlag = flag.String("odir","./tmp/","Path to output directory!")
+	var certsFlag = flag.String("certs","/opt/monroe/rootCACert.pem","Path to certificates!")
 
 	flag.Parse()
 
+	odir := *odirFlag
+	certs := *certsFlag
+
+	file, err := os.OpenFile(*cfgFile, os.O_RDONLY, 0)
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	cfgData, err := ioutil.ReadAll(file)
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	monroeCfg := &monroeConfig{}
+
+	err = json.Unmarshal(cfgData, &monroeCfg)
+
+	if err != nil {
+		panic(err.Error())
+	}
+
+	if monroeCfg.URLs != "" {
+		urls = monroeCfg.URLs
+	}
+
+	if monroeCfg.WaitFrom != 0 {
+		waitFrom = monroeCfg.WaitFrom
+	}
+
+	if monroeCfg.WaitTo != 0 {
+		waitTo = monroeCfg.WaitTo
+	}
+
+	if monroeCfg.Collect != 0 {
+		collect = monroeCfg.Collect
+	}
+
+	if monroeCfg.IFaceName != "" {
+		ifaceName = monroeCfg.IFaceName
+	}
+
+	if monroeCfg.Runs != 0 {
+		runs = monroeCfg.Runs
+	}
+
+	nodeId := monroeCfg.NodeId
+
+	logfilePath := filepath.Join(odir, fmt.Sprintf("puic-poll-%d-%s.log", time.Now().Unix(), nodeId))
+
 	
 	// Logging setup
-	collectedStats := make([]Stats, *collect)
+	collectedStats := make([]Stats, collect)
 	j := 0
 
-	logfile := openLogfile(*logfilePath)
+	logfile := openLogfile(logfilePath)
 	defer logfile.Close()
 	
-	ofile, err := openNextOutputFile(*odir)
+	ofile, err := openNextOutputFile(odir, nodeId)
 
 	if err != nil {
 		writeOrDie(logfile, "ERR: Error opening output file: %q", err.Error())
-		panic(err)
+		panic(err.Error())
 	}
 
-	hclient, err := createHttpClient(*ifaceName, logfile)
+	hclient, err := createHttpClient(ifaceName, logfile)
 
 	if err != nil {
 		writeOrDie(logfile, "ERR: Error creating h2client: %q", err.Error())
-		panic(err)
+		panic(err.Error())
 	}
 
-	if *certs != "" {
-		err := loadCerts(*certs, hclient)
+	if certs != "" {
+		err := loadCerts(certs, hclient)
 
 		if err != nil {
 			writeOrDie(logfile, "ERR: Error loading certs: %q", err.Error())
-			panic(err)
+			panic(err.Error())
 		}
 	}
 
-	urlsToFetch := strings.Split(*urls, ";")
+	urlsToFetch := strings.Split(urls, ";")
 	
 	run := 0
 
@@ -240,7 +307,7 @@ func main() {
 
 		if err != nil {
 			writeOrDie(logfile, fmt.Sprintf("ERR: Error: %q", err.Error()))
-			panic(err)
+			panic(err.Error())
 		}
 
 		statstr := string(statbytes)
@@ -255,7 +322,7 @@ func main() {
 
 		j++
 
-		if j >= *collect {
+		if j >= collect {
 
 			// Reset counter to zero, close the output file and open a new 
 			// output file
@@ -263,19 +330,19 @@ func main() {
 			run++
 			ofile.Close()
 
-			if run >= *runs {
+			if run >= runs {
 				break
 			}
 
-			ofile, err = openNextOutputFile(*odir)
+			ofile, err = openNextOutputFile(odir, nodeId)
 
 			if err != nil {
 				writeOrDie(logfile, "ERR: Error opening output file: %q", err.Error())
-				panic(err)
+				panic(err.Error())
 			}
 		}
 
-		wait(*waitFrom, *waitTo)
+		wait(waitFrom, waitTo)
 	}
 }
 
