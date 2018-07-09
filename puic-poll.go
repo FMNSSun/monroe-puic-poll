@@ -230,7 +230,11 @@ func main() {
 	}
 
 	if monroeCfg.IFaceName != "" {
-		ifaceName = monroeCfg.IFaceName
+		if monroeCfg.IFaceName != "*" {
+			ifaceName = monroeCfg.IFaceName
+		} else {
+			ifaceName = ""
+		}
 	}
 
 	if monroeCfg.Runs != 0 {
