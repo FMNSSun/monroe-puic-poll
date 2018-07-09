@@ -12,6 +12,12 @@ in the monroe interface when scheduling):
  * IFaceName string: Name of the interface. This will bind the local address to the IP assigned to the interface on startup. Use `*` to specificy listening on all.
  * Runs int: how many runs to do. One run equals one log file.
 
+The pull URL is `docker.io/munt/monroe-puic-poll`. Example config is:
+
+```
+"Collect":1024,"Runs":4,"URLs":"https://12.131.112.18:1010/data/4KiB","WaitFrom":10,"WaitTo":20,"IFaceName":"*"
+```
+
 ## Caveats
 
 Results are periodically synced from `/monroe/results` within the docker container to the monroe servers. To avoid "over-syncing"
