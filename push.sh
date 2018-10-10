@@ -3,6 +3,6 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 CONTAINER=${DIR##*/}
 
-CONTAINERTAG=munt/monroe-puic-poll
+CONTAINERTAG=buehlert/monroe-puic-poll
 
 docker login && docker tag ${CONTAINER} ${CONTAINERTAG} && docker push ${CONTAINERTAG} && echo "Finished uploading ${CONTAINERTAG}"

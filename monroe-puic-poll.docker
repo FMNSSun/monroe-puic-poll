@@ -1,6 +1,6 @@
 FROM monroe/base
 
-MAINTAINER munt@zhaw.ch
+MAINTAINER buehlert@ethz.ch
 
 COPY files/* /opt/monroe/
 
