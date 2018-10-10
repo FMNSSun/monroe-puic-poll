@@ -6,7 +6,7 @@ DOCKERFILE=${CONTAINER}.docker
 
 echo "Compiling puic-poll.go"
 
-go build ./puic-poll.go
+env GOOS=linux GOARCH=amd64 go build ./puic-poll.go
 chmod +x ./puic-poll
 cp -f ./puic-poll ./files/puic-poll
 
