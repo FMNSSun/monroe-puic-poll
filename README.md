@@ -26,4 +26,21 @@ the caveat that if the container is killed the log files obviously can't have be
 moves each run's log file after the run is completed to the `/monroe/results` directory (and then repeat with the next run). This means
 that if the container is killed in the middle of the run, the current run's log file is lost (but log files from past runs
 will be synced). This means that you need to select an appropriate amount of time and an appropriate data quota such that
-your runs will complete with these settings (or that at least a few runs can complete before the container is killed). 
+your runs will complete with these settings (or that at least a few runs can complete before the container is killed).
+
+## Local tests
+
+To test the created docker container locally, you need to create a directory (e.g. `temp`) which contains a `results` directory and the
+expected parameters in a JSON file called `config`. For example:
+```
+{
+    "Collect":1024,
+    "Runs":4,
+    "URLs":"https://12.131.112.18:1010/data/4KiB",
+    "WaitFrom":10,
+    "WaitTo":20,
+    "IFaceName":"*"
+}
+```
+
+Now you can run docker using this command: `docker run -v <full path to temp directory>:/monroe monroe-puic-poll`.
